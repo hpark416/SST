@@ -6,7 +6,8 @@
 #define ONE_WIRE_BUS 14
 #define TEMPERATURE_PRECISION 12
 char buffer[64];
-
+#define VBATPIN A7
+  
 
 // Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
 OneWire oneWire(ONE_WIRE_BUS);
@@ -175,9 +176,14 @@ void loop(void)
   float t4 = printTemperature(s4);
   Serial.print(',');
   float t5 = printTemperature(s5);
-  Serial.println();
+  Serial.print(',');
+  float measuredvbat = analogRead(VBATPIN);
+  measuredvbat *= 2;    // we divided by 2, so multiply back
+  measuredvbat *= 3.3;  // Multiply by 3.3V, our reference voltage
+  measuredvbat /= 1024; // convert to voltage
+  Serial.print("VBat: " ); Serial.println(measuredvbat);
 
-  sprintf(buffer,"%f,%f,%f,%f,%f", String(t1),t2,t3,t4,t5);
+  sprintf(buffer,"%f,%f,%f,%f,%f,%f", String(t1),t2,t3,t4,t5,measuredvbat);
   Serial1.println(buffer);
 
 }
