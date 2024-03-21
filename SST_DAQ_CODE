@@ -5,6 +5,8 @@
 // Data wire is plugged into port 2 on the Arduino
 #define ONE_WIRE_BUS 14
 #define TEMPERATURE_PRECISION 12
+char buffer[64];
+
 
 // Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
 OneWire oneWire(ONE_WIRE_BUS);
@@ -27,6 +29,7 @@ void setup(void)
   // start serial port
   Serial.begin(115200);
   Serial.println("Dallas Temperature IC Control Library Demo");
+  Serial1.begin(115200);
 
   // Start up the library
   sensors.begin();
@@ -118,21 +121,19 @@ void printAddress(DeviceAddress deviceAddress)
 }
 
 // function to print the temperature for a device
-void printTemperature(DeviceAddress deviceAddress)
+float printTemperature(DeviceAddress deviceAddress)
 {
   float tempC = sensors.getTempC(deviceAddress);
   if(tempC == DEVICE_DISCONNECTED_C) 
   {
     Serial.println("Error: Could not read temperature data");
-    return;
+    return -20;
   }
   //Serial.print("Temp C: ");
-  
-
-
   Serial.print(tempC);
   //Serial.print(" Temp F: ");
   //Serial.print(DallasTemperature::toFahrenheit(tempC));
+  return tempC;
 }
 
 // function to print a device's resolution
@@ -165,16 +166,18 @@ void loop(void)
   //Serial.println("DONE");
 
   // print the device information
-  printData(s1);
+  float t1 = printTemperature(s1);
   Serial.print(',');
-  printData(s2);
+  float t2 = printTemperature(s2);
   Serial.print(',');
-  printData(s3);
+  float t3 = printTemperature(s3);
   Serial.print(',');
-  printData(s4);
+  float t4 = printTemperature(s4);
   Serial.print(',');
-  printData(s5);
+  float t5 = printTemperature(s5);
   Serial.println();
 
-  //delay(10);
+  sprintf(buffer,"%f,%f,%f,%f,%f", String(t1),t2,t3,t4,t5);
+  Serial1.println(buffer);
+
 }
