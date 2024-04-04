@@ -1,3 +1,7 @@
+#include <DataTome.h>
+#include <DataTomeAnalysis.h>
+#include <DataTomeMvAvg.h>
+
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
@@ -8,11 +12,12 @@ OneWire oneWire(ONE_WIRE_BUS); // Setup a oneWire instance to communicate with a
 DallasTemperature sensors(&oneWire); // Pass our oneWire reference to Dallas Temperature.
 DeviceAddress s1,s2,s3,s4,s5; // arrays to hold device addresses
 
+DataTomeMvAvg<float> slope(4);
+
 
 void setup(void)
 {
   Serial.begin(9600);
-  Serial.print("Hello World");
   sensors.begin();  // Start up the library
   
   Serial.print("Locating devices...");
@@ -68,18 +73,19 @@ void printAddress(DeviceAddress deviceAddress) // function to print a device add
     Serial.print(deviceAddress[i], HEX);
   }
 }
-void printTemperature(DeviceAddress deviceAddress) // function to print the temperature for a device
+float printTemperature(DeviceAddress deviceAddress) // function to print the temperature for a device
 {
   float tempC = sensors.getTempC(deviceAddress);
   if(tempC == DEVICE_DISCONNECTED_C) 
   {
     Serial.println("Error: Could not read temperature data");
-    return;
+    return -1;
   }
   //Serial.print("Temp C: ");
-  //Serial.print(tempC);
+  Serial.print(tempC);
   //Serial.print(" Temp F: ");
-  Serial.print(DallasTemperature::toFahrenheit(tempC));
+//  Serial.print(DallasTemperature::toFahrenheit(tempC));
+  return tempC;
 }
 // function to print a device's resolution
 void printResolution(DeviceAddress deviceAddress)
@@ -114,83 +120,50 @@ void printData(DeviceAddress deviceAddress)
 bool changeNeeded = false;
 bool button = false;
 bool active = false;
-int sensorData[5] = {-1, -1, -1, -1, -1};
-int total[5][5] = {{0, 0, 0, 0, 0}, {0, 0, 0, 0, 0}, {0, 0, 0, 0, 0}, {0, 0, 0, 0, 0}, {0, 0, 0, 0, 0}};
-int t = 1;
-//float average[2][5] = {{0.0, 0.0, 0.0, 0.0, 0.0}, {-5.0, -5.0, -5.0, -5.0, -5.0}};
-float maxSlope = -1.0;
 time_t timer;
+int timeElapsed = 0;
+int nowTime = 0;
 
-void baselineSlope(){
+float updateSlope(DeviceAddress deviceAddress){
   Serial.println("Finding slope...");
-  maxSlope = -1.0;
-  for (int i = 0; i < sizeof(total[0]); i++) {
-    if ((total[4][i] - total[0][i]) / t > maxSlope) {
-      maxSlope = (total[4][i] - total[0][i]) / t;
-      Serial.print("max slope changed to ");
-      Serial.println(maxSlope);
-    }
-  }
+  slope.push(printTemperature(deviceAddress));
+  return slope.get();
 }
 
-void updateRunningAverage(){
-  //Move values down one column
-  for (int i = 1; i < 5; i++) {
-    for (int j = 0; j < 5; j++) {
-      total[i][j] = total[i-1][j];
-    }
-  }
-  //Fill in most recent readings (sensorData)
-  for (int i = 0; i < sizeof(sensorData); i++) {
-    Serial.print("TESTING TESTING");
-    Serial.print(*s1);
-    Serial.print(" or ");
-    Serial.println(int(s1));
-    sensorData[i] = *s1;
-    total[0][i] = int(s1);
-    t+=1;
-  }
-  Serial.println("Updating sensor reading list");
-  
+float getSlope() {
+  return slope.get();
 }
 
-
+int getTime() {
+  if (changeNeeded) {
+    timeElapsed = timer.second() - nowTime;
+  }
+  return timeElapsed;
+}
 
 /*
    Main function, calls the temperatures in a loop.
 */
 void loop(void)
 {
-  // call sensors.requestTemperatures() to issue a global temperature
-  // request to all devices on the bus
-  //Serial.print("Requesting temperatures...");
   sensors.requestTemperatures();
-  //Serial.println("DONE");
-  // print the device information
   printData(s1);
   Serial.print(',');
-//  printData(s2);
-//  Serial.print(',');
-//  printData(s3);
-//  Serial.print(',');
-//  printData(s4);
-//  Serial.print(',');
-//  printData(s5);
   Serial.println();
 
-  updateRunningAverage();
-  baselineSlope();
+  Serial.print("current slope:");
+  Serial.println(updateSlope(s1));
   // State 1: It is established to be on a human
-  if (maxSlope > -0.5 && maxSlope < 0.5) {
+  if (getSlope() > -0.5 && getSlope() < 0.5) {
     Serial.println("State 1: established to be on a human");
     active = true;
   }
   // State 2: The temparature is rising
-  if (active && maxSlope > 0.1) {
+  if (active && getSlope() > 0.1 && !changeNeeded) {
     Serial.println("State 2: The temperature is rising");
     changeNeeded = true;
-    // Indicate light
     // Start timer
+    nowTime = timer.second();
   }
   if (changeNeeded && button) {
     Serial.println("Reset to base state");
@@ -198,7 +171,6 @@ void loop(void)
     changeNeeded = false;
   }
   
-
   
   delay(50);
 }
