@@ -1,19 +1,14 @@
-#include <DataTome.h>
-#include <DataTomeAnalysis.h>
-#include <DataTomeMvAvg.h>
+#include <Adafruit_SleepyDog.h>
 
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
 
 #define ONE_WIRE_BUS 2    // NOTE THIS IS THAT BUS WIRE
-#define TEMPERATURE_PRECISION 12
+#define TEMPERATURE_PRECISION 2
 OneWire oneWire(ONE_WIRE_BUS); // Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
 DallasTemperature sensors(&oneWire); // Pass our oneWire reference to Dallas Temperature.
 DeviceAddress s1,s2,s3,s4,s5; // arrays to hold device addresses
-
-DataTomeMvAvg<float> slope(4);
-
 
 void setup(void)
 {
@@ -118,25 +113,26 @@ void printData(DeviceAddress deviceAddress)
  ***********/
 
 bool changeNeeded = false;
-bool button = false;
 bool active = false;
-time_t timer;
-int timeElapsed = 0;
-int nowTime = 0;
+word timeElapsed = 0;
+word startTime = 0;
+float slope = 0;
+word len = 1;
 
-float updateSlope(DeviceAddress deviceAddress){
+float updateSlope(uint8_t temp) {
   Serial.println("Finding slope...");
-  slope.push(printTemperature(deviceAddress));
-  return slope.get();
+  len++;
+  slope = slope * ((len-1)/len) + (int(temp) / len);
+  return slope;
 }
 
 float getSlope() {
-  return slope.get();
+  return slope;
 }
 
 int getTime() {
   if (changeNeeded) {
-    timeElapsed = timer.second() - nowTime;
+    timeElapsed = millis() - startTime;
   }
   return timeElapsed;
 }
@@ -152,7 +148,7 @@ void loop(void)
   Serial.println();
 
   Serial.print("current slope:");
-  Serial.println(updateSlope(s1));
+  Serial.println(updateSlope(printTemperature(s1)));
   // State 1: It is established to be on a human
   if (getSlope() > -0.5 && getSlope() < 0.5) {
     Serial.println("State 1: established to be on a human");
@@ -163,14 +159,12 @@ void loop(void)
     Serial.println("State 2: The temperature is rising");
     changeNeeded = true;
     // Start timer
-    nowTime = timer.second();
+    startTime = millis();
   }
-  if (changeNeeded && button) {
+  if (changeNeeded) {
     Serial.println("Reset to base state");
     active = false;
     changeNeeded = false;
   }
-  
-  
-  delay(50);
+  Watchdog.sleep(2000);
 }
