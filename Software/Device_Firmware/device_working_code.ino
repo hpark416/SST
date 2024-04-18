@@ -4,8 +4,7 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <WiFiClientSecure.h>
-
-
+#include <movingAvg.h>
 #define ONE_WIRE_BUS 4  // NOTE THIS IS THAT BUS WIRE
 #define TEMPERATURE_PRECISION 12
 OneWire oneWire(ONE_WIRE_BUS);        // Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
@@ -28,6 +27,12 @@ DeviceAddress s1, s2, s3, s4, s5;     // arrays to hold device addresses
 
 void asyncCB(AsyncResult &aResult);
 
+//state list
+//1 - green
+//2 - yellow
+//3 - red
+//4 = undeterminate
+
 void printResult(AsyncResult &aResult);
 DefaultNetwork network;  // initilize with boolean parameter to enable/disable network reconnection
 UserAuth user_auth(API_KEY, USER_EMAIL, USER_PASSWORD);
@@ -45,13 +50,15 @@ bool changeNeeded = false;
 bool active = false;
 word timeElapsed = 0;
 word startTime = 0;
-float slope = 0;
 word len = 1;
-int wifiMessage = 0;
-float past[5] = { 0, 0, 0, 0, 0 };
+int wifiMessage = 4;
+int past[5] = { 0, 0, 0, 0, 0 };  //hold past Max int temp values
 
-void setup(void) {
-  Serial.begin(9600);
+//moving averages for max tmps
+movingAvg avgTempMax(5);
+
+
+void initSensors() {
   sensors.begin();  // Start up the library
   Serial.print("Locating devices...");
   Serial.print("Found ");
@@ -91,7 +98,9 @@ void setup(void) {
   //  Serial.print("Device 1 Resolution: ");
   //  Serial.print(sensors.getResolution(s2), DEC);
   //  Serial.println();
+}
 
+void initWifi() {
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
   Serial.print("Connecting to Wi-Fi");
@@ -118,6 +127,14 @@ void setup(void) {
 
   app.getApp<Firestore::Documents>(Docs);
 }
+
+void setup(void) {
+  Serial.begin(9600);
+  initSensors();
+  initWifi();
+  //movingAvg initialization
+  avgTempMax.begin();
+}
 void printAddress(DeviceAddress deviceAddress)  // function to print a device address
 {
   for (uint8_t i = 0; i < 8; i++) {
@@ -126,8 +143,12 @@ void printAddress(DeviceAddress deviceAddress)  // function to print a device ad
     Serial.print(deviceAddress[i], HEX);
   }
 }
-float getTemperature(DeviceAddress deviceAddress)  // function to print the temperature for a device
-{
+
+float getTemperature(DeviceAddress deviceAddress) {
+
+  //implement a simple moving average across all sensors
+  //TODO maybe we'll have enough memory for this?
+
   float tempC = sensors.getTempC(deviceAddress);
   if (tempC == DEVICE_DISCONNECTED_C) {
     Serial.println("Error: Could not read temperature data");
@@ -180,6 +201,7 @@ void printResult(AsyncResult &aResult) {
 
 float calculateSlope() {
   len++;
+  float slope = -99.0;
   // slope = slope * ((len - 1) / len) + (int(temp) / len);
   if (past[0] != 0) {
     slope = (past[past_arr_size - 1] - past[0]) / past_arr_size_float;
@@ -189,17 +211,13 @@ float calculateSlope() {
   return slope;
 }
 
-void updatePast(float temp) {
+void updatePast(int temp) {
   // if (past[0] == 0 || temp != past[sizeof(past) - 1]) {
   for (int i = 0; i < past_arr_size - 1; i++) {
     past[i] = past[i + 1];
   }
   past[past_arr_size - 1] = temp;
   // }
-}
-
-float getSlope() {
-  return slope;
 }
 
 int getTime() {
@@ -209,7 +227,7 @@ int getTime() {
   return timeElapsed;
 }
 
-void printTemperatureData(float tmp1, float tmp2, float tmp3, float tmp4, float tmp5) {
+void printSerialPlotter(float tmp1, float tmp2, float tmp3, float tmp4, float tmp5, float slope, int maxAvg) {
   Serial.print("S1:");
   Serial.print(tmp1);
   Serial.print(',');
@@ -227,12 +245,20 @@ void printTemperatureData(float tmp1, float tmp2, float tmp3, float tmp4, float 
   Serial.print(',');
 
   Serial.print("S5:");
-  Serial.println(tmp5);
+  Serial.print(tmp5);
+  Serial.print(',');
+
+  Serial.print("Slope:");
+  Serial.print(slope);
+  Serial.print(',');
+
+  Serial.print("Avg");
+  Serial.println(maxAvg);
 }
 
-float getAverageTemperature(float tmp1, float tmp2, float tmp3, float tmp4, float tmp5) {
-  return (tmp1 + tmp2 + tmp3 + tmp4 + tmp5) / (5.0);
-}
+// float getAverageTemperature(float tmp1, float tmp2, float tmp3, float tmp4, float tmp5) {
+//   return (tmp1 + tmp2 + tmp3 + tmp4 + tmp5) / (5.0);
+// }
 
 float getMaxTemperature(float tmp1, float tmp2, float tmp3, float tmp4, float tmp5) {
   if (tmp1 > tmp2 && tmp1 > tmp3 && tmp1 > tmp4 && tmp1 > tmp5) {
@@ -250,7 +276,7 @@ float getMaxTemperature(float tmp1, float tmp2, float tmp3, float tmp4, float tm
   }
 }
 
-bool checkStateOne() {
+bool checkStateOne(float tmpSlope) {
   // State 1: It is established to be on a human
   //  else if (changeNeeded && !(past[sizeof(past) - 1] > 25 && past[sizeof(past) - 1] < 40)) {
   //    Serial.println("Reset to base state");
@@ -267,17 +293,18 @@ bool checkStateOne() {
   //the device is not already active,
   // -0.5 < slope < 0.5 AND
   // 29 < most recent MAX temperature gathered < 35
-  return (!active && getSlope() > -0.5 && getSlope() < 0.5 && past[past_arr_size - 1] > 29 && past[past_arr_size - 1] < 35);
-  
+  return (!active && tmpSlope >= 1.5);
+
+  //return (!active && tmpSlope > -0.5 && tmpSlope < 0.5 && past[past_arr_size - 1] > 29 && past[past_arr_size - 1] < 35);
 }
 
-bool checkStateTwo() {
-  return (active && !changeNeeded && getSlope() > 0.1);
-  
+bool checkStateTwo(float tmpSlope) {
+  //return (active && !changeNeeded && tmpSlope > 0.1);
+  return (active && !changeNeeded&& tmpSlope >= 3.5);
 }
 
 bool checkStateThree() {
-  return (changeNeeded && timeElapsed > 5000);   //TEST: change values to larger later
+  return (changeNeeded && timeElapsed > 5000);  //TEST: change values to larger later
 }
 
 /*
@@ -290,16 +317,15 @@ void loop(void) {
   float tmp3 = getTemperature(s3);
   float tmp4 = getTemperature(s4);
   float tmp5 = getTemperature(s5);
-  printTemperatureData(tmp1, tmp2, tmp3, tmp4, tmp5);
 
   float maxTmp = getMaxTemperature(tmp1, tmp2, tmp3, tmp4, tmp5);
-  Serial.print("Max Sensor Tmp:");
-  Serial.println(maxTmp);
-  updatePast(maxTmp);  //store the last 5 max temperature values and use to complete the slope
+  //Serial.print("Max Sensor Tmp:");
+  //Serial.println(maxTmp);
 
-  float slope = calculateSlope() * 10;  //scale value for comparison
-  Serial.print("Slope:");
-  Serial.println(slope);
+  int maxTmpAverage = avgTempMax.reading(maxTmp);  // calculate the moving average
+  updatePast(maxTmpAverage);//store the last 5 max temperature values and use to complete the slope
+  float slope = calculateSlope() * 10.0;  //scale value for comparison
+  printSerialPlotter(tmp1, tmp2, tmp3, tmp4, tmp5, slope, maxTmpAverage);
 
   // This function is required for handling async operations and maintaining the authentication tasks.
   app.loop();
@@ -311,7 +337,7 @@ void loop(void) {
 
   //Order state by importance
   // State 2: The temparature is rising
-  if (checkStateTwo()) {
+  if (checkStateTwo(slope)) {
     Serial.println("State 2: The temperature is rising");
     changeNeeded = true;
     // Start timer
@@ -321,7 +347,7 @@ void loop(void) {
     //    {
     //      write.setContent(2);
     //    }
-  } else if (checkStateOne()) {
+  } else if (checkStateOne(slope)) {
     Serial.println("State 1: established to be on a human");
     active = true;
     wifiMessage = 1;
@@ -330,11 +356,12 @@ void loop(void) {
     //      write.setContent(Values::IntegerValue(1));
     //    }
 
-  } else if (checkStateThree) {
+  } else if (checkStateThree()) {
     //    if (app.ready() && (millis() - dataMillis > 60000 || dataMillis == 0))
     //    {
     //      write.setContent(3);
     //    }
+    //TODO make this change to 3 later on
     wifiMessage = 3;
   } else {
     //state remains 0 unless changed?
@@ -342,7 +369,7 @@ void loop(void) {
 
   //-------------------------Sending Data---------------------------------------------------///
 
-  if (app.ready() && (millis() - dataMillis > 60000 || dataMillis == 0)) {
+  if (app.ready() && (millis() - dataMillis > 10000 || dataMillis == 0)) {
     dataMillis = millis();
     counter++;
     //Serial.println("Commit a document (set server value, update document)... ");
@@ -370,8 +397,9 @@ void loop(void) {
 
     //        Writes writes(Write(updateDoc, Precondition() /* currentDocument precondition */));
 
-
     documentPath = "Residents/states";
+    Serial.println("Sending State!");
+    Serial.println(wifiMessage);
     Values::MapValue mapV("state", Values::IntegerValue(wifiMessage));
     Document<Values::Value> updateDoc;
     updateDoc.setName(documentPath);
