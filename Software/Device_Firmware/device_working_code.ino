@@ -7,7 +7,7 @@
 
 
 #define ONE_WIRE_BUS 4  // NOTE THIS IS THAT BUS WIRE
-#define TEMPERATURE_PRECISION 9
+#define TEMPERATURE_PRECISION 12
 OneWire oneWire(ONE_WIRE_BUS);        // Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
 DallasTemperature sensors(&oneWire);  // Pass our oneWire reference to Dallas Temperature.
 DeviceAddress s1, s2, s3, s4, s5;     // arrays to hold device addresses
@@ -297,7 +297,7 @@ void loop(void) {
   Serial.println(maxTmp);
   updatePast(maxTmp);  //store the last 5 max temperature values and use to complete the slope
 
-  float slope = calculateSlope() * 10;  //make this an easier value to see
+  float slope = calculateSlope() * 10;  //scale value for comparison
   Serial.print("Slope:");
   Serial.println(slope);
 
