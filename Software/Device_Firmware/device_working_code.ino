@@ -234,8 +234,6 @@ float getAverageTemperature(float tmp1, float tmp2, float tmp3, float tmp4, floa
   return (tmp1 + tmp2 + tmp3 + tmp4 + tmp5) / (5.0)
 }
 
-//TODO test if this function works
-//floating point comparision is a bit funky, look into this
 float getMaxTemperature(float tmp1, float tmp2, float tmp3, float tmp4, float tmp5) {
   if (tmp1 > tmp2 && tmp1 > tmp3 && tmp1 > tmp4 && tmp1 > tmp5) {
     return getTemperature(s1);
