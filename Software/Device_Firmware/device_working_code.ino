@@ -231,7 +231,7 @@ void printTemperatureData(float tmp1, float tmp2, float tmp3, float tmp4, float 
 }
 
 float getAverageTemperature(float tmp1, float tmp2, float tmp3, float tmp4, float tmp5) {
-  return (tmp1 + tmp2 + tmp3 + tmp4 + tmp5) / (5.0)
+  return (tmp1 + tmp2 + tmp3 + tmp4 + tmp5) / (5.0);
 }
 
 float getMaxTemperature(float tmp1, float tmp2, float tmp3, float tmp4, float tmp5) {
@@ -250,6 +250,36 @@ float getMaxTemperature(float tmp1, float tmp2, float tmp3, float tmp4, float tm
   }
 }
 
+bool checkStateOne() {
+  // State 1: It is established to be on a human
+  //  else if (changeNeeded && !(past[sizeof(past) - 1] > 25 && past[sizeof(past) - 1] < 40)) {
+  //    Serial.println("Reset to base state");
+  //    active = false;
+  //    changeNeeded = false;
+  //    wifiMessage = 0;
+  //    //    if (app.ready() && (millis() - dataMillis > 60000 || dataMillis == 0))
+  //    //    {
+  //    //      write.setContent(0);
+  //    //    }
+  //  }
+
+  //device is on a human if:
+  //the device is not already active,
+  // -0.5 < slope < 0.5 AND
+  // 29 < most recent MAX temperature gathered < 35
+  return (!active && getSlope() > -0.5 && getSlope() < 0.5 && past[past_arr_size - 1] > 29 && past[past_arr_size - 1] < 35);
+  
+}
+
+bool checkStateTwo() {
+  return (active && !changeNeeded && getSlope() > 0.1);
+  
+}
+
+bool checkStateThree() {
+  return (changeNeeded && timeElapsed > 5000);   //TEST: change values to larger later
+}
+
 /*
    Main function, calls the temperatures in a loop.
 */
@@ -265,12 +295,12 @@ void loop(void) {
   float maxTmp = getMaxTemperature(tmp1, tmp2, tmp3, tmp4, tmp5);
   Serial.print("Max Sensor Tmp:");
   Serial.println(maxTmp);
-  updatePast(maxTmp); //store the last 5 max temperature values and use to complete the slope
+  updatePast(maxTmp);  //store the last 5 max temperature values and use to complete the slope
 
-  float slope = calculateSlope();
+  float slope = calculateSlope() * 10;  //make this an easier value to see
   Serial.print("Slope:");
   Serial.println(slope);
-  
+
   // This function is required for handling async operations and maintaining the authentication tasks.
   app.loop();
   // This required when different AsyncClients than used in FirebaseApp assigned to the Firestore functions.
@@ -279,9 +309,9 @@ void loop(void) {
   // To get anyc result without callback
   // printResult(aResult_no_callback)
 
-  // Please don't change state order, it is ordered by importance
+  //Order state by importance
   // State 2: The temparature is rising
-  if (active && !changeNeeded && getSlope() > 0.1) {
+  if (checkStateTwo()) {
     Serial.println("State 2: The temperature is rising");
     changeNeeded = true;
     // Start timer
@@ -291,13 +321,7 @@ void loop(void) {
     //    {
     //      write.setContent(2);
     //    }
-  }
-  // State 1: It is established to be on a human
-  //device is on a human if:
-  //the device is not already active,
-  // -0.5 < slope < 0.5 AND
-  // 29 < most recent MAX temperature gathered < 35
-  else if (!active && getSlope() > -0.5 && getSlope() < 0.5 && past[past_arr_size - 1] > 29 && past[past_arr_size - 1] < 35) {
+  } else if (checkStateOne()) {
     Serial.println("State 1: established to be on a human");
     active = true;
     wifiMessage = 1;
@@ -305,25 +329,18 @@ void loop(void) {
     //    {
     //      write.setContent(Values::IntegerValue(1));
     //    }
-  }
-  //  else if (changeNeeded && !(past[sizeof(past) - 1] > 25 && past[sizeof(past) - 1] < 40)) {
-  //    Serial.println("Reset to base state");
-  //    active = false;
-  //    changeNeeded = false;
-  //    wifiMessage = 0;
-  //    //    if (app.ready() && (millis() - dataMillis > 60000 || dataMillis == 0))
-  //    //    {
-  //    //      write.setContent(0);
-  //    //    }
-  //  }
-  else if (changeNeeded && timeElapsed > 5000) {  //TEST: change values to larger later
+
+  } else if (checkStateThree) {
     //    if (app.ready() && (millis() - dataMillis > 60000 || dataMillis == 0))
     //    {
     //      write.setContent(3);
     //    }
     wifiMessage = 3;
+  } else {
+    //state remains 0 unless changed?
   }
 
+  //-------------------------Sending Data---------------------------------------------------///
 
   if (app.ready() && (millis() - dataMillis > 60000 || dataMillis == 0)) {
     dataMillis = millis();
@@ -345,9 +362,6 @@ void loop(void) {
     //        Values::MapValue mapV("temp", Values::IntegerValue(wifiMessage));
     //        mapV.add("random", Values::IntegerValue(rand()));
     //        mapV.add("status", Values::BooleanValue(counter % 2 == 0));
-
-
-
     //        Document<Values::Value> updateDoc;
     //        updateDoc.setName(documentPath);
     //        updateDoc.add("myMap", Values::Value(mapV));
@@ -386,9 +400,9 @@ void loop(void) {
   }
 
   //sleep if possible
- // if (!Serial) {
-//    Watchdog.sleep(3000);
-//  } else {
-//    delay(3000);
-//  }
+  // if (!Serial) {
+  //    Watchdog.sleep(3000);
+  //  } else {
+  //    delay(3000);
+  //  }
 }
