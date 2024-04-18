@@ -15,6 +15,7 @@ DeviceAddress s1, s2, s3, s4, s5;     // arrays to hold device addresses
 #define WIFI_SSID "ross"
 #define WIFI_PASSWORD "123456789"
 #define past_arr_size 5
+#define past_arr_size_float 5.0
 // The API key can be obtained from Firebase console > Project Overview > Project settings.
 #define API_KEY "AIzaSyCRE3X98T5ZSZO4DEhOKFEBO9wInWUiUEs"
 
@@ -52,20 +53,17 @@ float past[5] = { 0, 0, 0, 0, 0 };
 void setup(void) {
   Serial.begin(9600);
   sensors.begin();  // Start up the library
-
   Serial.print("Locating devices...");
   Serial.print("Found ");
   Serial.print(sensors.getDeviceCount(), DEC);  // locate devices on the bus
   Serial.println(" devices.");
   // report parasite power requirements (in Sensors_test)
-
   // method 1: by index
   if (!sensors.getAddress(s1, 0)) Serial.println("Unable to find address for Device 1");
   if (!sensors.getAddress(s2, 1)) Serial.println("Unable to find address for Device 2");
   if (!sensors.getAddress(s3, 2)) Serial.println("Unable to find address for Device 3");
   if (!sensors.getAddress(s4, 3)) Serial.println("Unable to find address for Device 4");
   if (!sensors.getAddress(s5, 4)) Serial.println("Unable to find address for Device 5");
-
   Serial.print("Device 1 Address: ");
   printAddress(s1);
   Serial.println();
@@ -94,7 +92,6 @@ void setup(void) {
   //  Serial.print(sensors.getResolution(s2), DEC);
   //  Serial.println();
 
-
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
   Serial.print("Connecting to Wi-Fi");
@@ -109,15 +106,10 @@ void setup(void) {
   Serial.println();
 
   Firebase.printf("Firebase Client v%s\n", FIREBASE_CLIENT_VERSION);
-
   Serial.println("Initializing app...");
-
   ssl_client.setInsecure();
-
   app.setCallback(asyncCB);
-
   initializeApp(aClient, app, getAuth(user_auth));
-
   // Waits for app to be authenticated.
   // For asynchronous operation, this blocking wait can be ignored by calling app.loop() in loop().
   ms = millis();
@@ -126,8 +118,6 @@ void setup(void) {
 
   app.getApp<Firestore::Documents>(Docs);
 }
-
-
 void printAddress(DeviceAddress deviceAddress)  // function to print a device address
 {
   for (uint8_t i = 0; i < 8; i++) {
@@ -143,10 +133,6 @@ float getTemperature(DeviceAddress deviceAddress)  // function to print the temp
     Serial.println("Error: Could not read temperature data");
     return -1;
   }
-  //Serial.print("Temp C: ");
-  // Serial.print(tempC);
-  //Serial.print(" Temp F: ");
-  //  Serial.print(DallasTemperature::toFahrenheit(tempC));
   return tempC;
 }
 // function to print a device's resolution
@@ -192,11 +178,11 @@ void printResult(AsyncResult &aResult) {
  ***********/
 
 
-float updateSlope() {
+float calculateSlope() {
   len++;
   // slope = slope * ((len - 1) / len) + (int(temp) / len);
   if (past[0] != 0) {
-    slope = (past[past_arr_size - 1] - past[0]) / past_arr_size;
+    slope = (past[past_arr_size - 1] - past[0]) / past_arr_size_float;
   } else {
     slope = 0;
   }
@@ -223,50 +209,72 @@ int getTime() {
   return timeElapsed;
 }
 
+void printTemperatureData(float tmp1, float tmp2, float tmp3, float tmp4, float tmp5) {
+  Serial.print("S1:");
+  Serial.print(tmp1);
+  Serial.print(',');
+
+  Serial.print("S2:");
+  Serial.print(tmp2);
+  Serial.print(',');
+
+  Serial.print("S3:");
+  Serial.print(tmp3);
+  Serial.print(',');
+
+  Serial.print("S4:");
+  Serial.print(tmp4);
+  Serial.print(',');
+
+  Serial.print("S5:");
+  Serial.println(tmp5);
+}
+
+float getAverageTemperature(float tmp1, float tmp2, float tmp3, float tmp4, float tmp5) {
+  return (tmp1 + tmp2 + tmp3 + tmp4 + tmp5) / (5.0)
+}
+
+//TODO test if this function works
+//floating point comparision is a bit funky, look into this
+float getMaxTemperature(float tmp1, float tmp2, float tmp3, float tmp4, float tmp5) {
+  if (tmp1 > tmp2 && tmp1 > tmp3 && tmp1 > tmp4 && tmp1 > tmp5) {
+    return getTemperature(s1);
+  } else if (tmp2 > tmp1 && tmp2 > tmp3 && tmp2 > tmp4 && tmp2 > tmp5) {
+    return getTemperature(s2);
+  } else if (tmp3 > tmp2 && tmp3 > tmp1 && tmp3 > tmp4 && tmp3 > tmp5) {
+    return getTemperature(s3);
+  } else if (tmp4 > tmp2 && tmp4 > tmp3 && tmp4 > tmp1 && tmp4 > tmp5) {
+    return getTemperature(s4);
+  } else if (tmp5 > tmp2 && tmp5 > tmp3 && tmp5 > tmp4 && tmp5 > tmp1) {
+    return getTemperature(s5);
+  } else {
+    return getTemperature(s3);
+  }
+}
+
 /*
    Main function, calls the temperatures in a loop.
 */
 void loop(void) {
   sensors.requestTemperatures();
   float tmp1 = getTemperature(s1);
-  Serial.print(tmp1);
-  Serial.print(',');
   float tmp2 = getTemperature(s2);
-  Serial.print(tmp2);
-  Serial.print(',');
   float tmp3 = getTemperature(s3);
-  Serial.print(tmp3);
-  Serial.print(',');
   float tmp4 = getTemperature(s4);
-  Serial.print(tmp4);
-  Serial.print(',');
   float tmp5 = getTemperature(s5);
-  Serial.print(tmp5);
-  Serial.print(',');
-  Serial.println();
+  printTemperatureData(tmp1, tmp2, tmp3, tmp4, tmp5);
 
-  //get the max temperature reading from all 5 sensors
+  float maxTmp = getMaxTemperature(tmp1, tmp2, tmp3, tmp4, tmp5);
+  Serial.print("Max Sensor Tmp:");
+  Serial.println(maxTmp);
+  updatePast(maxTmp); //store the last 5 max temperature values and use to complete the slope
 
-  if (tmp1 > tmp2 && tmp1 > tmp3 && tmp1 > tmp4 && tmp1 > tmp5) {
-    updatePast(getTemperature(s1));
-  } else if (tmp2 > tmp1 && tmp2 > tmp3 && tmp2 > tmp4 && tmp2 > tmp5) {
-    updatePast(getTemperature(s2));
-  } else if (tmp3 > tmp2 && tmp3 > tmp1 && tmp3 > tmp4 && tmp3 > tmp5) {
-    updatePast(getTemperature(s3));
-  } else if (tmp4 > tmp2 && tmp4 > tmp3 && tmp4 > tmp1 && tmp4 > tmp5) {
-    updatePast(getTemperature(s4));
-  } else if (tmp5 > tmp2 && tmp5 > tmp3 && tmp5 > tmp4 && tmp5 > tmp1) {
-    updatePast(getTemperature(s5));
-  } else {
-    updatePast(getTemperature(s3));
-  }
-
-  Serial.println(updateSlope());
-  //Serial.println("Finding slope...");
-
+  float slope = calculateSlope();
+  Serial.print("Slope:");
+  Serial.println(slope);
+  
   // This function is required for handling async operations and maintaining the authentication tasks.
   app.loop();
-
   // This required when different AsyncClients than used in FirebaseApp assigned to the Firestore functions.
   Docs.loop();
 
@@ -322,9 +330,7 @@ void loop(void) {
   if (app.ready() && (millis() - dataMillis > 60000 || dataMillis == 0)) {
     dataMillis = millis();
     counter++;
-
     //Serial.println("Commit a document (set server value, update document)... ");
-
     String documentPath = "temperature/temperature";
     String fieldPath = "temp";
 
@@ -381,9 +387,10 @@ void loop(void) {
     // Docs.commit(aClient, Firestore::Parent(FIREBASE_PROJECT_ID), writes, aResult_no_callback);
   }
 
-  if (!Serial) {
-    Watchdog.sleep(3000);
-  } else {
-    delay(3000);
-  }
+  //sleep if possible
+ // if (!Serial) {
+//    Watchdog.sleep(3000);
+//  } else {
+//    delay(3000);
+//  }
 }
