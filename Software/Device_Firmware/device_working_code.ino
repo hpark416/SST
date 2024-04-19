@@ -55,7 +55,7 @@ int wifiMessage = 4;
 int past[5] = { 0, 0, 0, 0, 0 };  //hold past Max int temp values
 
 //moving averages for max tmps
-movingAvg avgTempMax(5);
+movingAvg avgTempMax(10);
 
 
 void initSensors() {
@@ -260,6 +260,11 @@ void printSerialPlotter(float tmp1, float tmp2, float tmp3, float tmp4, float tm
 //   return (tmp1 + tmp2 + tmp3 + tmp4 + tmp5) / (5.0);
 // }
 
+void printToLog() {
+  //used for data collection
+  
+}
+
 float getMaxTemperature(float tmp1, float tmp2, float tmp3, float tmp4, float tmp5) {
   if (tmp1 > tmp2 && tmp1 > tmp3 && tmp1 > tmp4 && tmp1 > tmp5) {
     return getTemperature(s1);
@@ -276,7 +281,7 @@ float getMaxTemperature(float tmp1, float tmp2, float tmp3, float tmp4, float tm
   }
 }
 
-bool checkStateOne(float tmpSlope) {
+bool checkStateOne(float tmpSlope, int avgMaxTmp) {
   // State 1: It is established to be on a human
   //  else if (changeNeeded && !(past[sizeof(past) - 1] > 25 && past[sizeof(past) - 1] < 40)) {
   //    Serial.println("Reset to base state");
@@ -293,7 +298,7 @@ bool checkStateOne(float tmpSlope) {
   //the device is not already active,
   // -0.5 < slope < 0.5 AND
   // 29 < most recent MAX temperature gathered < 35
-  return (!active && tmpSlope >= 1.5);
+  return (!active && tmpSlope >= 1.5 && avgMaxTmp >= 30 && avgMaxTmp <= 33);
 
   //return (!active && tmpSlope > -0.5 && tmpSlope < 0.5 && past[past_arr_size - 1] > 29 && past[past_arr_size - 1] < 35);
 }
@@ -347,7 +352,7 @@ void loop(void) {
     //    {
     //      write.setContent(2);
     //    }
-  } else if (checkStateOne(slope)) {
+  } else if (checkStateOne(slope, maxTmpAverage)) {
     Serial.println("State 1: established to be on a human");
     active = true;
     wifiMessage = 1;
@@ -369,7 +374,7 @@ void loop(void) {
 
   //-------------------------Sending Data---------------------------------------------------///
 
-  if (app.ready() && (millis() - dataMillis > 10000 || dataMillis == 0)) {
+  if (app.ready() && (millis() - dataMillis > 5000 || dataMillis == 0)) {
     dataMillis = millis();
     counter++;
     //Serial.println("Commit a document (set server value, update document)... ");
